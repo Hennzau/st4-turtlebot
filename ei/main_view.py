@@ -39,6 +39,7 @@ class MainView:
         self.interface.add_gui(Used(pygame.K_RIGHT, "→", (225, 525), self.turtle_right))
         
         self.last_distance = 0
+        self.last_points = []
         
         pygame.font.init()
         self.font = pygame.font.SysFont('Comic Sans MS', 30)
@@ -63,17 +64,15 @@ class MainView:
             distance = self.calcDistance(quad)
             
             self.last_distance = distance
+            
+            self.last_points = points[0]
         
         self.camera_image = pygame.surfarray.make_surface(image)
         
     def calcDistance(self, points):
-        
         knownWidth = 100
-        
         knownDistance = 40
-        
-        
-        
+
         distanceBtw = lambda x,y: np.sqrt(np.dot(x-y,x-y))
         
         width = np.mean([distanceBtw(points[i],points[i+1]) for i in range(3)])
@@ -142,6 +141,24 @@ class MainView:
 
     def update(self):
         self.interface.update()
+        
+    def control_turtle(self):
+        ALIGNMENT_TOLERANCE = 50 
+        
+        position = np.mean(self.last_points)
+        
+        width, height = self.surface_configuration
+        
+        if self.last_points is None:
+            self.turtle_right()
+        if position > width / 2 + ALIGNMENT_TOLERANCE:
+            self.turtle_right()
+        elif position < width / 2 - ALIGNMENT_TOLERANCE:
+            self.turtle_left()
+        else:
+            self.turtle_up()
+        
+    
 
     def render(self, surface):
         surface.fill(IVORY)
@@ -159,5 +176,7 @@ class MainView:
         text_surface = self.font.render(f'Distance: {self.last_distance:.2f}cm', False, (0, 0, 0))
         
         surface.blit(text_surface, 50,400)
+        
+        self.control_turtle()
 
         self.interface.render(surface)
