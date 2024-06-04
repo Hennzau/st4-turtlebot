@@ -6,10 +6,14 @@ import cmath
 
 from dataclasses import dataclass
 
+from matplotlib import pyplot as plt
+from matplotlib.patches import Polygon
+from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
+
 from gfs.gui.interface import Interface
 from gfs.gui.used import Used
 from gfs.pallet import IVORY, DARKBLUE
-from gfs.fonts import MOTO_MANGUCODE_50, render_font
+from gfs.fonts import MOTO_MANGUCODE_30, render_font
 
 from pycdr2 import IdlStruct
 from pycdr2.types import uint32, float32
@@ -72,6 +76,26 @@ class MainView:
 
         self.last_distance = 0
 
+        fig, ax = plt.subplots()
+        self.figure = fig
+        self.ax = ax
+
+        self.patch = ax.add_patch(Polygon([[0, 0]], color='lightgrey'))
+        self.line = ax.plot([], [], '.', color='black')[0]
+        center = ax.plot([0], [0], 'o', color='blue')[0]
+        ax.set_xlim(-4, 4)
+        ax.set_ylim(-4, 4)
+
+        canvas = FigureCanvas(self.figure)
+        canvas.draw()
+        renderer = canvas.get_renderer()
+        matplotlib_plot_rgba_image_data = renderer.tostring_rgb()  # Get raw image data of the plot
+        plot_canvas_width, plot_canvas_height = canvas.get_width_height()
+
+        self.lidar_image = pygame.image.fromstring(matplotlib_plot_rgba_image_data,
+                                                   (plot_canvas_width, plot_canvas_height),
+                                                   "RGB")
+
     def quit(self):
         self.camera_image_subscriber.undeclare()
         self.lidar_image_subscriber.undeclare()
@@ -126,15 +150,28 @@ class MainView:
         self.patch.set_xy(XY)
         self.line.set_data(X, Y)
 
-        # Convert Matplotlib plot to Pygame surface
-        buffer = io.BytesIO()
-        self.fig.savefig(buffer, format="png")
-        buffer.seek(0)
-        image = Image.open(buffer)
-        mode = image.mode
-        size = image.size
-        data = image.tobytes()
-        self.lidar_image = pygame.image.fromstring(data, size, mode)
+        canvas = FigureCanvas(self.figure)
+        canvas.draw()
+        renderer = canvas.get_renderer()
+        matplotlib_plot_rgba_image_data = renderer.tostring_rgb()  # Get raw image data of the plot
+        plot_canvas_width, plot_canvas_height = canvas.get_width_height()
+
+        self.lidar_image = pygame.image.fromstring(matplotlib_plot_rgba_image_data,
+                                                   (plot_canvas_width, plot_canvas_height),
+                                                   "RGB")
+
+        """
+                self.lidar_image =
+                # Convert Matplotlib plot to Pygame surface
+                buffer = io.BytesIO()
+                self.fig.savefig(buffer, format="png")
+                buffer.seek(0)
+                image = Image.open(buffer)
+                mode = image.mode
+                size = image.size
+                data = image.tobytes()
+                self.lidar_image = pygame.image.fromstring(data, size, mode)
+        """
 
     def turtle_up(self):
         self.cmd_vel_publisher.put(("Forward", 20.0))
@@ -181,11 +218,11 @@ class MainView:
             surface.blit(self.camera_image, 15, 15)
 
         if self.lidar_image is not None:
-            surface.draw_rect(DARKBLUE, pygame.Rect(800, 10, self.lidar_image.get_width() + 10,
+            surface.draw_rect(DARKBLUE, pygame.Rect(600, 130, self.lidar_image.get_width() + 10,
                                                     self.lidar_image.get_height() + 10))
-            surface.blit(self.lidar_image, (805, 25))
+            surface.blit(self.lidar_image, 605, 135)
 
-        text = render_font(MOTO_MANGUCODE_50, f'Distance: {self.last_distance:.2f}cm', (0, 0, 0))
+        text = render_font(MOTO_MANGUCODE_30, f'Distance: {self.last_distance:.2f}cm', (0, 0, 0))
 
         surface.draw_image(text, 50, 400)
 
