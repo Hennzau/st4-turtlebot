@@ -25,7 +25,7 @@ def main():
         for event in events():
             if event.type == pygame.QUIT:
                 is_running = False
-                ei_viewer.quit ()
+                ei_viewer.quit()
 
             elif event.type == pygame.KEYDOWN or event.type == pygame.KEYUP:
                 ei_viewer.keyboard_input(event)

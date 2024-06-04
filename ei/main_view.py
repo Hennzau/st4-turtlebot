@@ -52,28 +52,28 @@ class MainView:
         self.camera_image = pygame.surfarray.make_surface(image)
 
     def turtle_up(self):
-        self.cmd_vel_publisher.put("Up")
+        self.cmd_vel_publisher.put(("Forward", 20.0))
 
     def turtle_down(self):
-        self.cmd_vel_publisher.put("Down")
+        self.cmd_vel_publisher.put(("Forward", -20.0))
 
     def turtle_left(self):
-        self.cmd_vel_publisher.put("Left")
+        self.cmd_vel_publisher.put(("Rotate", 150.0))
 
     def turtle_right(self):
-        self.cmd_vel_publisher.put("Right")
+        self.cmd_vel_publisher.put(("Rotate", -150.0))
 
     def turtle_standby_up(self):
-        self.cmd_vel_publisher.put("Standby-Up")
+        self.cmd_vel_publisher.put(("Forward", 0.0))
 
     def turtle_standby_down(self):
-        self.cmd_vel_publisher.put("Standby-Down")
+        self.cmd_vel_publisher.put(("Forward", 0.0))
 
     def turtle_standby_left(self):
-        self.cmd_vel_publisher.put("Standby-Left")
+        self.cmd_vel_publisher.put(("Rotate", 0.0))
 
     def turtle_standby_right(self):
-        self.cmd_vel_publisher.put("Standby-Right")
+        self.cmd_vel_publisher.put(("Rotate", 0.0))
 
     def keyboard_input(self, event):
         self.interface.keyboard_input(event)
