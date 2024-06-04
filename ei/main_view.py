@@ -31,6 +31,10 @@ def calculate_twist(linear, angular):
     return t.serialize()
 
 
+def message_callback(sample):
+    print("MESSAGE RECEIVED : {}".format(sample.payload))
+
+
 class MainView:
     def __init__(self, width, height, session):
         self.surface_configuration = (width, height)
@@ -41,6 +45,8 @@ class MainView:
         self.camera_image = None
 
         self.cmd_vel_publisher = self.session.declare_publisher("turtle/cmd_vel")
+        self.message_publisher = self.session.declare_publisher("turtle/debug_message")
+        self.message_subscriber = self.session.declare_subscriber("turtle/debug_message", message_callback)
 
         self.interface = Interface()
         self.interface.add_gui(Used(pygame.K_UP, "↑", (200, 500), self.turtle_up))
@@ -50,6 +56,9 @@ class MainView:
 
     def quit(self):
         self.camera_image_subscriber.undeclare()
+        self.cmd_vel_publisher.undeclare()
+        self.message_publisher.undeclare()
+        self.message_subscriber.undeclare()
 
     def camera_image_callback(self, sample):
         image = np.frombuffer(bytes(sample.value.payload), dtype=np.uint8)
@@ -76,6 +85,8 @@ class MainView:
 
     def keyboard_input(self, event):
         self.interface.keyboard_input(event)
+
+        self.message_publisher.put("Debug message")
 
     def mouse_input(self, event):
         self.interface.mouse_input(event)
