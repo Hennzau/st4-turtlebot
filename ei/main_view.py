@@ -2,12 +2,44 @@ import cv2
 import numpy as np
 import pygame.image
 import io
-from PIL import Image
 import cmath
+
+from dataclasses import dataclass
 
 from gfs.gui.interface import Interface
 from gfs.gui.used import Used
 from gfs.pallet import IVORY, DARKBLUE
+from gfs.fonts import MOTO_MANGUCODE_50, render_font
+
+from pycdr2 import IdlStruct
+from pycdr2.types import uint32, float32
+from typing import List
+
+
+@dataclass
+class Time(IdlStruct, typename="Time"):
+    sec: uint32
+    nsec: uint32
+
+
+@dataclass
+class Header(IdlStruct, typename="Header"):
+    stamp: Time
+    frame_id: str
+
+
+@dataclass
+class LaserScan(IdlStruct, typename="LaserScan"):
+    header: Header
+    angle_min: float32
+    angle_max: float32
+    angle_increment: float32
+    time_increment: float32
+    scan_time: float32
+    range_min: float32
+    range_max: float32
+    ranges: List[float32]
+    intensities: List[float32]
 
 
 def message_callback(sample):
@@ -33,19 +65,16 @@ class MainView:
         self.message_subscriber = self.session.declare_subscriber("turtle/debug_message", message_callback)
 
         self.interface = Interface()
-        self.interface.add_gui(Used(pygame.K_UP, "↑", (200, 500), self.turtle_up))
-        self.interface.add_gui(Used(pygame.K_DOWN, "↓", (200, 550), self.turtle_down))
-        self.interface.add_gui(Used(pygame.K_LEFT, "←", (175, 525), self.turtle_left))
-        self.interface.add_gui(Used(pygame.K_RIGHT, "→", (225, 525), self.turtle_right))
-        
+        self.interface.add_gui(Used(pygame.K_UP, "↑", (200, 500), self.turtle_up, self.turtle_standby_up))
+        self.interface.add_gui(Used(pygame.K_DOWN, "↓", (200, 550), self.turtle_down, self.turtle_standby_down))
+        self.interface.add_gui(Used(pygame.K_LEFT, "←", (175, 525), self.turtle_left, self.turtle_standby_left))
+        self.interface.add_gui(Used(pygame.K_RIGHT, "→", (225, 525), self.turtle_right, self.turtle_standby_right))
+
         self.last_distance = 0
-        
-        pygame.font.init()
-        self.font = pygame.font.SysFont('Comic Sans MS', 30)
 
     def quit(self):
         self.camera_image_subscriber.undeclare()
-        self.lidar_image_subscriber.undecalre()
+        self.lidar_image_subscriber.undeclare()
         self.cmd_vel_publisher.undeclare()
         self.message_publisher.undeclare()
         self.message_subscriber.undeclare()
@@ -54,36 +83,35 @@ class MainView:
         image = np.frombuffer(bytes(sample.value.payload), dtype=np.uint8)
         image = cv2.imdecode(image, 1)
         image = cv2.rotate(image, cv2.ROTATE_90_COUNTERCLOCKWISE)
-                
+
         ret_qr, decoded_info, points, _ = self.qcd.detectAndDecodeMulti(image)
         if points is not None:
-            image = cv2.polylines(image, points.astype(int), True, (255,0,0), 3)
-            
+            image = cv2.polylines(image, points.astype(int), True, (255, 0, 0), 3)
+
             quad = points[0]
             distance = self.calcDistance(quad)
-            
+
             self.last_distance = distance
-        
+
         self.camera_image = pygame.surfarray.make_surface(image)
-        
+
     def calcDistance(self, points):
-        
+
         knownWidth = 100
-        
+
         knownDistance = 40
-        
-        
-        
-        distanceBtw = lambda x,y: np.sqrt(np.dot(x-y,x-y))
-        
-        width = np.mean([distanceBtw(points[i],points[i+1]) for i in range(3)])
-        
+
+        distanceBtw = lambda x, y: np.sqrt(np.dot(x - y, x - y))
+
+        width = np.mean([distanceBtw(points[i], points[i + 1]) for i in range(3)])
+
         distance = (knownDistance * knownWidth) / width
-        
+
         return distance
 
     def lidar_image_callback(self, sample):
         print('[DEBUG] Received frame: {}'.format(sample.key_expr))
+
         scan = LaserScan.deserialize(sample.payload)
         angles = list(
             map(lambda x: x * 1j + cmath.pi / 2j, np.arange(scan.angle_min, scan.angle_max, scan.angle_increment)))
@@ -94,6 +122,7 @@ class MainView:
         X = [i.real for i in complexes]
         Y = [i.imag for i in complexes]
         XY = [[i.real, i.imag] for i in complexes]
+
         self.patch.set_xy(XY)
         self.line.set_data(X, Y)
 
@@ -155,9 +184,9 @@ class MainView:
             surface.draw_rect(DARKBLUE, pygame.Rect(800, 10, self.lidar_image.get_width() + 10,
                                                     self.lidar_image.get_height() + 10))
             surface.blit(self.lidar_image, (805, 25))
-            
-        text_surface = self.font.render(f'Distance: {self.last_distance:.2f}cm', False, (0, 0, 0))
-        
-        surface.blit(text_surface, 50,400)
+
+        text = render_font(MOTO_MANGUCODE_50, f'Distance: {self.last_distance:.2f}cm', (0, 0, 0))
+
+        surface.draw_image(text, 50, 400)
 
         self.interface.render(surface)
