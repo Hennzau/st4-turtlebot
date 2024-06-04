@@ -12,7 +12,6 @@ from gfs.pallet import IVORY, DARKBLUE
 
 def message_callback(sample):
     print("MESSAGE RECEIVED : {}".format(sample.payload))
-    
 
 
 class MainView:
@@ -25,7 +24,7 @@ class MainView:
 
         self.camera_image_subscriber = self.session.declare_subscriber("turtle/camera", self.camera_image_callback)
         self.camera_image = None
-        
+
         self.lidar_image_subscriber = self.session.declare_subscriber("turtle/lidar", self.lidar_image_callback)
         self.lidar_image = None
 
@@ -58,11 +57,12 @@ class MainView:
             image = cv2.polylines(image, points.astype(int), True, (255, 0, 0), 3)
 
         self.camera_image = pygame.surfarray.make_surface(image)
-    
+
     def lidar_image_callback(self, sample):
         print('[DEBUG] Received frame: {}'.format(sample.key_expr))
         scan = LaserScan.deserialize(sample.payload)
-        angles = list(map(lambda x: x*1j+cmath.pi/2j, np.arange(scan.angle_min, scan.angle_max, scan.angle_increment)))
+        angles = list(
+            map(lambda x: x * 1j + cmath.pi / 2j, np.arange(scan.angle_min, scan.angle_max, scan.angle_increment)))
 
         complexes = []
         for (angle, distance, intensity) in list(zip(angles, scan.ranges, scan.intensities)):
@@ -82,7 +82,6 @@ class MainView:
         size = image.size
         data = image.tobytes()
         self.lidar_image = pygame.image.fromstring(data, size, mode)
-    
 
     def turtle_up(self):
         self.cmd_vel_publisher.put(("Forward", 20.0))
@@ -127,7 +126,7 @@ class MainView:
             surface.draw_rect(DARKBLUE, pygame.Rect(10, 10, self.camera_image.get_width() + 10,
                                                     self.camera_image.get_height() + 10))
             surface.blit(self.camera_image, 15, 15)
-            
+
         if self.lidar_image is not None:
             surface.draw_rect(DARKBLUE, pygame.Rect(800, 10, self.lidar_image.get_width() + 10,
                                                     self.lidar_image.get_height() + 10))
