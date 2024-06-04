@@ -44,9 +44,9 @@ class MainView:
 
         self.interface = Interface()
         self.interface.add_gui(Used(pygame.K_UP, "↑", (200, 500), self.turtle_up))
-        self.interface.add_gui(Used(pygame.K_DOWN, "↓", (200, 550), self.turtle_up))
-        self.interface.add_gui(Used(pygame.K_LEFT, "←", (175, 525), self.turtle_up))
-        self.interface.add_gui(Used(pygame.K_RIGHT, "→", (225, 525), self.turtle_up))
+        self.interface.add_gui(Used(pygame.K_DOWN, "↓", (200, 550), self.turtle_down))
+        self.interface.add_gui(Used(pygame.K_LEFT, "←", (175, 525), self.turtle_left))
+        self.interface.add_gui(Used(pygame.K_RIGHT, "→", (225, 525), self.turtle_right))
 
     def quit(self):
         self.camera_image_subscriber.undeclare()
@@ -59,19 +59,19 @@ class MainView:
         self.camera_image = pygame.surfarray.make_surface(image)
 
     def turtle_up(self):
-        twist = calculate_twist(2.0, 0.0)
+        twist = calculate_twist(20.0, 0.0)
         self.cmd_vel_publisher.put(twist)
 
     def turtle_down(self):
-        twist = calculate_twist(-2.0, 0.0)
+        twist = calculate_twist(-20.0, 0.0)
         self.cmd_vel_publisher.put(twist)
 
     def turtle_left(self):
-        twist = calculate_twist(0.0, 2.0)
+        twist = calculate_twist(0.0, 150.0)
         self.cmd_vel_publisher.put(twist)
 
     def turtle_right(self):
-        twist = calculate_twist(0.0, -2.0)
+        twist = calculate_twist(0.0, -150.0)
         self.cmd_vel_publisher.put(twist)
 
     def keyboard_input(self, event):

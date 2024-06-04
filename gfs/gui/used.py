@@ -31,6 +31,7 @@ class Used:
     def keyboard_input(self, event):
         if event.type == pygame.KEYDOWN:
             if event.key == self.key:
+                self.function()
                 self.over = True
         elif event.type == pygame.KEYUP:
             if event.key == self.key:
@@ -43,7 +44,8 @@ class Used:
         pass
 
     def update(self):
-        pass
+        if self.over:
+            self.function()
 
     def render(self, surface):
         if self.over:
