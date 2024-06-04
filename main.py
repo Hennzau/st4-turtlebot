@@ -12,6 +12,7 @@ def main():
     surface = Surface(1280, 720, "ST4 EI1 - Interface!")
     clock = pygame.time.Clock()
 
+    zenoh.init_logger()
     config = zenoh.Config.from_file("config.json")
     session = zenoh.open(config)
 

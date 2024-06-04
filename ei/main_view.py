@@ -9,55 +9,6 @@ from gfs.gui.interface import Interface
 from gfs.gui.used import Used
 from gfs.pallet import IVORY, DARKBLUE
 
-from dataclasses import dataclass
-from pycdr2 import IdlStruct
-from pycdr2.types import int8, int32, uint32, float32, float64
-from typing import List
-
-
-@dataclass
-class Vector3(IdlStruct, typename="Vector3"):
-    x: float64
-    y: float64
-    z: float64
-
-
-@dataclass
-class Twist(IdlStruct, typename="Twist"):
-    linear: Vector3
-    angular: Vector3
-    
-    
-    
-class Time(IdlStruct, typename="Time"):
-    sec: uint32
-    nsec: uint32
-    
-class Header(IdlStruct, typename="Header"):
-    stamp: Time
-    frame_id: str
-
-class LaserScan(IdlStruct, typename="LaserScan"):
-    header: Header
-    angle_min: float32
-    angle_max: float32
-    angle_increment: float32
-    time_increment: float32
-    scan_time: float32
-    range_min: float32
-    range_max: float32
-    ranges: List[float32]
-    intensities: List[float32]
-
-
-
-
-def calculate_twist(linear, angular):
-    t = Twist(linear=Vector3(x=linear, y=0.0, z=0.0),
-              angular=Vector3(x=0.0, y=0.0, z=angular))
-
-    return t.serialize()
-
 
 def message_callback(sample):
     print("MESSAGE RECEIVED : {}".format(sample.payload))
@@ -70,6 +21,8 @@ class MainView:
         self.next_state = None
         self.session = session
 
+        self.qcd = cv2.QRCodeDetector()
+
         self.camera_image_subscriber = self.session.declare_subscriber("turtle/camera", self.camera_image_callback)
         self.camera_image = None
         
@@ -81,10 +34,12 @@ class MainView:
         self.message_subscriber = self.session.declare_subscriber("turtle/debug_message", message_callback)
 
         self.interface = Interface()
-        self.interface.add_gui(Used(pygame.K_UP, "↑", (200, 500), self.turtle_up))
-        self.interface.add_gui(Used(pygame.K_DOWN, "↓", (200, 550), self.turtle_down))
-        self.interface.add_gui(Used(pygame.K_LEFT, "←", (175, 525), self.turtle_left))
-        self.interface.add_gui(Used(pygame.K_RIGHT, "→", (225, 525), self.turtle_right))
+        self.interface.add_gui(Used(pygame.K_UP, "↑", (200, 500), self.turtle_up, self.turtle_standby_up))
+        self.interface.add_gui(Used(pygame.K_DOWN, "↓", (200, 550), self.turtle_down, self.turtle_standby_down))
+        self.interface.add_gui(Used(pygame.K_LEFT, "←", (175, 525), self.turtle_left, self.turtle_standby_left))
+        self.interface.add_gui(Used(pygame.K_RIGHT, "→", (225, 525), self.turtle_right, self.turtle_standby_right))
+
+        self.last_points = []
 
     def quit(self):
         self.camera_image_subscriber.undeclare()
@@ -95,8 +50,12 @@ class MainView:
 
     def camera_image_callback(self, sample):
         image = np.frombuffer(bytes(sample.value.payload), dtype=np.uint8)
+        # image = np.rot90(image)
         image = cv2.imdecode(image, 1)
-        image = np.rot90(image)
+
+        ret_qr, decoded_info, points, _ = self.qcd.detectAndDecodeMulti(image)
+        if points is not None:
+            image = cv2.polylines(image, points.astype(int), True, (255, 0, 0), 3)
 
         self.camera_image = pygame.surfarray.make_surface(image)
     
@@ -126,25 +85,31 @@ class MainView:
     
 
     def turtle_up(self):
-        twist = calculate_twist(20.0, 0.0)
-        self.cmd_vel_publisher.put(twist)
+        self.cmd_vel_publisher.put("Up")
 
     def turtle_down(self):
-        twist = calculate_twist(-20.0, 0.0)
-        self.cmd_vel_publisher.put(twist)
+        self.cmd_vel_publisher.put("Down")
 
     def turtle_left(self):
-        twist = calculate_twist(0.0, 150.0)
-        self.cmd_vel_publisher.put(twist)
+        self.cmd_vel_publisher.put("Left")
 
     def turtle_right(self):
-        twist = calculate_twist(0.0, -150.0)
-        self.cmd_vel_publisher.put(twist)
+        self.cmd_vel_publisher.put("Right")
+
+    def turtle_standby_up(self):
+        self.cmd_vel_publisher.put("Standby-Up")
+
+    def turtle_standby_down(self):
+        self.cmd_vel_publisher.put("Standby-Down")
+
+    def turtle_standby_left(self):
+        self.cmd_vel_publisher.put("Standby-Left")
+
+    def turtle_standby_right(self):
+        self.cmd_vel_publisher.put("Standby-Right")
 
     def keyboard_input(self, event):
         self.interface.keyboard_input(event)
-
-        self.message_publisher.put("Debug message")
 
     def mouse_input(self, event):
         self.interface.mouse_input(event)
