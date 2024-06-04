@@ -33,14 +33,6 @@ class MainView:
         self.message_subscriber = self.session.declare_subscriber("turtle/debug_message", message_callback)
 
         self.interface = Interface()
-<<<<<<< HEAD
-        self.interface.add_gui(Used(pygame.K_UP, "↑", (200, 500), self.turtle_up, self.turtle_standby_up))
-        self.interface.add_gui(Used(pygame.K_DOWN, "↓", (200, 550), self.turtle_down, self.turtle_standby_down))
-        self.interface.add_gui(Used(pygame.K_LEFT, "←", (175, 525), self.turtle_left, self.turtle_standby_left))
-        self.interface.add_gui(Used(pygame.K_RIGHT, "→", (225, 525), self.turtle_right, self.turtle_standby_right))
-
-        self.last_points = []
-=======
         self.interface.add_gui(Used(pygame.K_UP, "↑", (200, 500), self.turtle_up))
         self.interface.add_gui(Used(pygame.K_DOWN, "↓", (200, 550), self.turtle_down))
         self.interface.add_gui(Used(pygame.K_LEFT, "←", (175, 525), self.turtle_left))
@@ -50,7 +42,6 @@ class MainView:
         
         pygame.font.init()
         self.font = pygame.font.SysFont('Comic Sans MS', 30)
->>>>>>> 9a3ec36 (Added distance measurement)
 
     def quit(self):
         self.camera_image_subscriber.undeclare()
@@ -61,15 +52,6 @@ class MainView:
 
     def camera_image_callback(self, sample):
         image = np.frombuffer(bytes(sample.value.payload), dtype=np.uint8)
-<<<<<<< HEAD
-        # image = np.rot90(image)
-        image = cv2.imdecode(image, 1)
-
-        ret_qr, decoded_info, points, _ = self.qcd.detectAndDecodeMulti(image)
-        if points is not None:
-            image = cv2.polylines(image, points.astype(int), True, (255, 0, 0), 3)
-
-=======
         image = cv2.imdecode(image, 1)
         image = cv2.rotate(image, cv2.ROTATE_90_COUNTERCLOCKWISE)
                 
@@ -82,7 +64,6 @@ class MainView:
             
             self.last_distance = distance
         
->>>>>>> 9a3ec36 (Added distance measurement)
         self.camera_image = pygame.surfarray.make_surface(image)
         
     def calcDistance(self, points):
@@ -169,17 +150,14 @@ class MainView:
             surface.draw_rect(DARKBLUE, pygame.Rect(10, 10, self.camera_image.get_width() + 10,
                                                     self.camera_image.get_height() + 10))
             surface.blit(self.camera_image, 15, 15)
-<<<<<<< HEAD
 
         if self.lidar_image is not None:
             surface.draw_rect(DARKBLUE, pygame.Rect(800, 10, self.lidar_image.get_width() + 10,
                                                     self.lidar_image.get_height() + 10))
             surface.blit(self.lidar_image, (805, 25))
-=======
             
         text_surface = self.font.render(f'Distance: {self.last_distance:.2f}cm', False, (0, 0, 0))
         
         surface.blit(text_surface, 50,400)
->>>>>>> 9a3ec36 (Added distance measurement)
 
         self.interface.render(surface)
