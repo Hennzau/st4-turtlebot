@@ -27,10 +27,10 @@ class MainView:
         self.message_subscriber = self.session.declare_subscriber("turtle/debug_message", message_callback)
 
         self.interface = Interface()
-        self.interface.add_gui(Used(pygame.K_UP, "↑", (200, 500), self.turtle_up, self.turtle_standby))
-        self.interface.add_gui(Used(pygame.K_DOWN, "↓", (200, 550), self.turtle_down, self.turtle_standby))
-        self.interface.add_gui(Used(pygame.K_LEFT, "←", (175, 525), self.turtle_left, self.turtle_standby))
-        self.interface.add_gui(Used(pygame.K_RIGHT, "→", (225, 525), self.turtle_right, self.turtle_standby))
+        self.interface.add_gui(Used(pygame.K_UP, "↑", (200, 500), self.turtle_up, self.turtle_standby_up))
+        self.interface.add_gui(Used(pygame.K_DOWN, "↓", (200, 550), self.turtle_down, self.turtle_standby_down))
+        self.interface.add_gui(Used(pygame.K_LEFT, "←", (175, 525), self.turtle_left, self.turtle_standby_left))
+        self.interface.add_gui(Used(pygame.K_RIGHT, "→", (225, 525), self.turtle_right, self.turtle_standby_right))
 
         self.last_points = []
 
@@ -63,8 +63,17 @@ class MainView:
     def turtle_right(self):
         self.cmd_vel_publisher.put("Right")
 
-    def turtle_standby(self):
-        self.cmd_vel_publisher.put("Standby")
+    def turtle_standby_up(self):
+        self.cmd_vel_publisher.put("Standby-Up")
+
+    def turtle_standby_down(self):
+        self.cmd_vel_publisher.put("Standby-Down")
+
+    def turtle_standby_left(self):
+        self.cmd_vel_publisher.put("Standby-Left")
+
+    def turtle_standby_right(self):
+        self.cmd_vel_publisher.put("Standby-Right")
 
     def keyboard_input(self, event):
         self.interface.keyboard_input(event)
