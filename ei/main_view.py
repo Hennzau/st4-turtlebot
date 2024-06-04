@@ -40,6 +40,8 @@ class MainView:
         self.surface_configuration = (width, height)
         self.next_state = None
         self.session = session
+        
+        self.qcd = cv2.QRCodeDetector()
 
         self.camera_image_subscriber = self.session.declare_subscriber("turtle/camera", self.camera_image_callback)
         self.camera_image = None
@@ -53,6 +55,8 @@ class MainView:
         self.interface.add_gui(Used(pygame.K_DOWN, "↓", (200, 550), self.turtle_down))
         self.interface.add_gui(Used(pygame.K_LEFT, "←", (175, 525), self.turtle_left))
         self.interface.add_gui(Used(pygame.K_RIGHT, "→", (225, 525), self.turtle_right))
+        
+        self.last_points = []
 
     def quit(self):
         self.camera_image_subscriber.undeclare()
@@ -62,9 +66,13 @@ class MainView:
 
     def camera_image_callback(self, sample):
         image = np.frombuffer(bytes(sample.value.payload), dtype=np.uint8)
+        #image = np.rot90(image)
         image = cv2.imdecode(image, 1)
-        image = np.rot90(image)
-
+        
+        ret_qr, decoded_info, points, _ = self.qcd.detectAndDecodeMulti(image)
+        if points is not None:
+            image = cv2.polylines(image, points.astype(int), True, (255,0,0), 3)
+        
         self.camera_image = pygame.surfarray.make_surface(image)
 
     def turtle_up(self):
@@ -104,5 +112,6 @@ class MainView:
             surface.draw_rect(DARKBLUE, pygame.Rect(10, 10, self.camera_image.get_width() + 10,
                                                     self.camera_image.get_height() + 10))
             surface.blit(self.camera_image, 15, 15)
+            
 
         self.interface.render(surface)
