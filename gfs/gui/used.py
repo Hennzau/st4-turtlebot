@@ -8,10 +8,12 @@ from gfs.pallet import IVORY, DARKBLUE, DARKGREY
 
 
 class Used:
-    def __init__(self, key, text, pos, function):
+    def __init__(self, key, text, pos, function_over, function_normal):
         self.key = key
         self.text = text
-        self.function = function
+        self.function_over = function_over
+        self.function_normal = function_normal
+
         self.pos = pos
 
         self.over = False
@@ -31,10 +33,11 @@ class Used:
     def keyboard_input(self, event):
         if event.type == pygame.KEYDOWN:
             if event.key == self.key:
-                self.function()
+                self.function_over()
                 self.over = True
         elif event.type == pygame.KEYUP:
             if event.key == self.key:
+                self.function_normal()
                 self.over = False
 
     def mouse_input(self, event):
@@ -44,8 +47,7 @@ class Used:
         pass
 
     def update(self):
-        if self.over:
-            self.function()
+        pass
 
     def render(self, surface):
         if self.over:
