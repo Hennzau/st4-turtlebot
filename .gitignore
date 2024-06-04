@@ -4,6 +4,7 @@ __pycache__/
 *$py.class
 
 #zenoh
+.idea/
 config.json
 
 # C extensions
