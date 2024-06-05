@@ -106,6 +106,14 @@ class MainView:
         self.last_points = []
         self.state = STATE_FINISH
         self.last_state = -1
+        
+        self.destination = np.array([50,30])
+        self.position = np.zeros(2)
+        self.angle = 0
+        self.last_distance = 0
+        self.last_angle = 0
+        self.cumilative_error_distance = 0
+        self.cumilative_error_angle = 0
 
     def quit(self):
         self.camera_image_subscriber.undeclare()
@@ -124,7 +132,7 @@ class MainView:
         if points is not None:
             image = cv2.polylines(image, points.astype(int), True, (255, 0, 0), 3)
 
-            distance = self.calcDistance(quad)
+            distance = self.calc_distance(quad)
 
             self.last_distance = distance
             
@@ -133,7 +141,42 @@ class MainView:
         
         self.camera_image = pygame.surfarray.make_surface(image)
 
-    def calcDistance(self, points):
+    def set_destination(self, dest):
+        self.destination = dest
+        
+    def set_mouvement(self, linear, angular):
+        self.cmd_vel_publisher.put(("Forward", linear))
+        self.cmd_vel_publisher.put(("Rotate", angular))
+    
+    def go_to_destination(self):
+        ALIGNMENT_TOLERANCE = 4 #degree
+        POSITION_TOLERANCE  = 5 #cm
+        
+        if self.position is None:
+            return
+        
+        relative_position = self.destination - self.position
+        relative_angle = self.angle - np.arctan2(*relative_position)
+        relative_distance = np.sqrt(np.dot(relative_position,relative_position))
+        
+        if abs(relative_angle) > ALIGNMENT_TOLERANCE:
+            
+            alpha = 10*relative_angle + 4*self.cumilative_error_angle +4*(relative_angle - self.last_angle)
+            self.set_mouvement(0,alpha)
+            
+            self.last_angle = relative_angle
+            self.cumilative_error_angle += (relative_angle - self.last_angle)
+        elif relative_distance > POSITION_TOLERANCE:
+            v = 100*relative_position + 10*self.cumilative_error_angle +10*(relative_angle - self.last_angle)
+            self.set_mouvement(0,v)
+            
+            self.last_distance = relative_distance
+            self.cumilative_error_distance += (relative_distance- self.last_distance)
+        else:
+            self.set_mouvement(0, 0)
+            
+    
+    def calc_distance(self, points):
         knownWidth = 100
         knownDistance = 40
 
@@ -241,6 +284,8 @@ class MainView:
                     pass
                 
             self.last_state = self.state
+            
+    
         
     def update_state(self, imageShape, quad):
         ALIGNMENT_TOLERANCE = 75 
@@ -254,7 +299,7 @@ class MainView:
         
         position = np.mean(quad[:,1])
         print(position)
-        distance = self.calcDistance(quad)
+        distance = self.calc_distance(quad)
         
         if position > width / 2 + ALIGNMENT_TOLERANCE:
             self.state = STATE_ALIGN_RIGHT
