@@ -95,6 +95,7 @@ def lidar_listener(sample):
     global line, patch
     patch.set_xy(XY)
     line.set_data(X, Y)
+    
 
 print("[INFO] Openning zenoh session...")
 zenoh.init_logger()

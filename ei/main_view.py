@@ -82,6 +82,9 @@ class MainView:
         self.interface.add_gui(Used(pygame.K_RIGHT, "→", (225, 525), self.turtle_right, self.turtle_standby_right))
 
         self.last_distance = 0
+        
+        self.PID_const = 0.5
+        self.image_xbar = 0
 
         fig, ax = plt.subplots()
         self.figure = fig
@@ -189,7 +192,7 @@ class MainView:
         self.cmd_vel_publisher.put(("Forward", 10.0))
 
     def turtle_down(self):
-        self.cmd_vel_publisher.put(("Forward", -10.0))
+        self.cmd_vel_publisher.put(("Backward", -10.0))
 
     def turtle_left(self):
         self.cmd_vel_publisher.put(("Rotate", 35.0))
@@ -208,6 +211,24 @@ class MainView:
 
     def turtle_standby_right(self):
         self.cmd_vel_publisher.put(("Rotate", 0.0))
+        
+    def turle_pvel_up(self):
+        vel = self.PID_const*abs(self.camera_image.get_width()/2-self.image_xbar)
+        self.cmd_vel_publisher.put(("Forward", vel))
+    
+    def turtle_pvel_down(self):
+        vel = -self.PID_const*abs(self.camera_image.get_width()/2-self.image_xbar)
+        self.cmd_vel_publisher.put(("Backward", vel))
+        
+    def turtle_pvel_left(self):
+        vel = self.PID_const*abs(self.camera_image.get_width()/2-self.image_xbar)
+        self.cmd_vel_publisher.put(("Left", vel))
+        
+    def turtle_pvel_right(self):
+        vel = -self.PID_const*abs(self.camera_image.get_width()/2-self.image_xbar)
+        self.cmd_vel_publisher.put(("right", vel))
+        
+
 
     def keyboard_input(self, event):
         self.interface.keyboard_input(event)
@@ -228,15 +249,20 @@ class MainView:
             
             match self.state:
                 case 0: 
-                    self.turtle_right()
+                    # self.turtle_right()
+                    self.turtle_pvel_right()
                 case 1: 
-                    self.turtle_left()
+                    # self.turtle_left()
+                    self.turtle_pvel_left()
                 case 2: 
-                    self.turtle_right()
+                    # self.turtle_right()
+                    self.turtle_pvel_right()
                 case 3: 
-                    self.turtle_up()
+                    # self.turtle_up()
+                    self.turle_pvel_up()
                 case 4: 
-                    self.turtle_down()
+                    # self.turtle_down()
+                    self.turtle_pvel_down()
                 case _:
                     pass
                 
@@ -252,6 +278,8 @@ class MainView:
             self.state = STATE_LOST
             return
         
+        print(quad)
+        
         position = np.mean(quad[:,1])
         print(position)
         distance = self.calcDistance(quad)
@@ -266,6 +294,9 @@ class MainView:
             self.state = STATE_BACKWARD
         else:
             self.state = STATE_FINISH
+            
+        center=quad.sum(axis=0)
+        self.image_xbar = center[0]
         
     
 
