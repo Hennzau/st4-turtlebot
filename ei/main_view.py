@@ -12,8 +12,9 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 
 from gfs.gui.interface import Interface
 from gfs.gui.used import Used
+from gfs.gui.button import Button
 from gfs.pallet import IVORY, DARKBLUE
-from gfs.fonts import MOTO_MANGUCODE_30, render_font
+from gfs.fonts import MOTO_MANGUCODE_30, MOTO_MANGUCODE_10, render_font
 
 from pycdr2 import IdlStruct
 from pycdr2.types import uint32, float32
@@ -74,6 +75,9 @@ class MainView:
 
         self.lidar_image_subscriber = self.session.declare_subscriber("turtle/lidar", self.lidar_scan_callback)
         self.lidar_image = None
+        self.map_image = None
+        self.lidar_text = render_font(MOTO_MANGUCODE_10, "Instant Lidar Data", (0, 0, 0))
+        self.map_text = render_font(MOTO_MANGUCODE_10, "Slam Map Data", (0, 0, 0))
 
         self.laser = Laser(360, 5, 359, 4000, 0, 0)
         self.map_size_meters = 5
@@ -98,8 +102,8 @@ class MainView:
         self.last_points = []
         self.state = STATE_FINISH
         self.last_state = -1
-        
-        self.destination = np.array([50,30])
+
+        self.destination = np.array([50, 30])
         self.position = np.zeros(2)
         self.angle = 0
         self.last_distance = 0
@@ -134,39 +138,38 @@ class MainView:
 
     def set_destination(self, dest):
         self.destination = dest
-        
+
     def set_mouvement(self, linear, angular):
         self.cmd_vel_publisher.put(("Forward", linear))
         self.cmd_vel_publisher.put(("Rotate", angular))
-    
+
     def go_to_destination(self):
-        ALIGNMENT_TOLERANCE = 4 #degree
-        POSITION_TOLERANCE  = 5 #cm
-        
+        ALIGNMENT_TOLERANCE = 4  # degree
+        POSITION_TOLERANCE = 5  # cm
+
         if self.position is None:
             return
-        
+
         relative_position = self.destination - self.position
         relative_angle = self.angle - np.arctan2(*relative_position)
-        relative_distance = np.sqrt(np.dot(relative_position,relative_position))
-        
+        relative_distance = np.sqrt(np.dot(relative_position, relative_position))
+
         if abs(relative_angle) > ALIGNMENT_TOLERANCE:
-            
-            alpha = 10*relative_angle + 4*self.cumilative_error_angle +4*(relative_angle - self.last_angle)
-            self.set_mouvement(0,alpha)
-            
+
+            alpha = 10 * relative_angle + 4 * self.cumilative_error_angle + 4 * (relative_angle - self.last_angle)
+            self.set_mouvement(0, alpha)
+
             self.last_angle = relative_angle
             self.cumilative_error_angle += (relative_angle - self.last_angle)
         elif relative_distance > POSITION_TOLERANCE:
-            v = 100*relative_position + 10*self.cumilative_error_angle +10*(relative_angle - self.last_angle)
-            self.set_mouvement(0,v)
-            
+            v = 100 * relative_position + 10 * self.cumilative_error_angle + 10 * (relative_angle - self.last_angle)
+            self.set_mouvement(0, v)
+
             self.last_distance = relative_distance
-            self.cumilative_error_distance += (relative_distance- self.last_distance)
+            self.cumilative_error_distance += (relative_distance - self.last_distance)
         else:
             self.set_mouvement(0, 0)
-            
-    
+
     def calc_distance(self, points):
         knownWidth = 100
         knownDistance = 40
@@ -193,7 +196,43 @@ class MainView:
         # transform into meters + translate in order to center the map
         self.pos = self.slam.getpos()
         self.pos = (self.pos[0] / 10, self.pos[1] / 10, self.pos[2])
-        self.pos = (self.pos[0] - self.map_size_meters * 100 / 2, self.pos[1] - self.map_size_meters * 100 / 2, self.pos[2])
+        self.pos = (
+            self.pos[0] - self.map_size_meters * 100 / 2, self.pos[1] - self.map_size_meters * 100 / 2, self.pos[2])
+
+        # transform map bytearray into a pygame image
+        map_image = np.array(self.map).reshape((600, 600))
+        _, map_image = cv2.threshold(map_image, 100, 255, cv2.THRESH_BINARY)
+        map_image = cv2.rotate(map_image, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        map_image = cv2.cvtColor(map_image, cv2.COLOR_GRAY2RGB)
+
+        x = int(300 + self.pos[1])
+        y = int(300 - self.pos[0])
+
+        map_image = cv2.circle(map_image, (x, y), 10, (0, 0, 255), -1)
+
+        map_image = cv2.resize(map_image, (300, 300))
+
+        self.map_image = pygame.surfarray.make_surface(map_image)
+
+        # draw instant scan on a pygame image
+
+        lidar_image = np.zeros((600, 600, 3), dtype=np.uint8)
+
+        for i, distance in enumerate(distances):
+            if distance < 750:
+                # fit the distance inside the window
+                real_distance = distance / 750.0 * 300.0
+
+                angle = np.radians(angles[i])
+                x = int(300.0 + real_distance * np.cos(angle))
+                y = int(300.0 + real_distance * np.sin(angle))
+
+                lidar_image = cv2.circle(lidar_image, (x, y), 10, (0, 255, 0), -1)
+
+        lidar_image = cv2.circle(lidar_image, (300, 300), 10, (255, 255, 255), -1)
+        lidar_image = cv2.rotate(lidar_image, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        lidar_image = cv2.resize(lidar_image, (300, 300))
+        self.lidar_image = pygame.surfarray.make_surface(lidar_image)
 
     def turtle_up(self):
         self.cmd_vel_publisher.put(("Forward", 10.0))
@@ -251,6 +290,7 @@ class MainView:
                     pass
 
             self.last_state = self.state
+
     def update_state(self, imageShape, quad):
         ALIGNMENT_TOLERANCE = 75
         POSITION_TOLERANCE = 5
@@ -264,7 +304,7 @@ class MainView:
         position = np.mean(quad[:, 1])
         print(position)
         distance = self.calc_distance(quad)
-        
+
         if position > width / 2 + ALIGNMENT_TOLERANCE:
             self.state = STATE_ALIGN_RIGHT
         elif position < width / 2 - ALIGNMENT_TOLERANCE:
@@ -285,9 +325,18 @@ class MainView:
             surface.blit(self.camera_image, 15, 15)
 
         if self.lidar_image is not None:
-            surface.draw_rect(DARKBLUE, pygame.Rect(600, 20, self.lidar_image.get_width() + 10,
+            surface.draw_rect(DARKBLUE, pygame.Rect(960, 20, self.lidar_image.get_width() + 10,
                                                     self.lidar_image.get_height() + 10))
-            surface.blit(self.lidar_image, 605, 25)
+            surface.blit(self.lidar_image, 965, 25)
+
+            surface.draw_image(self.lidar_text, 1050, 335)
+
+        if self.map_image is not None:
+            surface.draw_rect(DARKBLUE, pygame.Rect(960, 400, self.map_image.get_width() + 10,
+                                                    self.map_image.get_height() + 10))
+            surface.blit(self.map_image, 965, 405)
+
+            surface.draw_image(self.map_text, 1075, 385)
 
         text = render_font(MOTO_MANGUCODE_30, f'Distance: {self.last_distance:.2f}cm', (0, 0, 0))
 
