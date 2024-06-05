@@ -14,6 +14,7 @@ from gfs.gui.interface import Interface
 from gfs.gui.used import Used
 from gfs.pallet import IVORY, DARKBLUE
 from gfs.fonts import MOTO_MANGUCODE_30, render_font
+from gfs.gui.button import *
 
 from pycdr2 import IdlStruct
 from pycdr2.types import uint32, float32
@@ -90,7 +91,11 @@ class MainView:
         self.interface.add_gui(Used(pygame.K_DOWN, "↓", (200, 550), self.turtle_down, self.turtle_standby_down))
         self.interface.add_gui(Used(pygame.K_LEFT, "←", (175, 525), self.turtle_left, self.turtle_standby_left))
         self.interface.add_gui(Used(pygame.K_RIGHT, "→", (225, 525), self.turtle_right, self.turtle_standby_right))
-
+        
+        self.interface.add_gui(Button("Manual Mode", (400,490), self.swith2manual))
+        self.interface.add_gui(Button("QRcode Mode", (400,540), self.swith2qrcode))
+        self.interface.add_gui(Button("Lidar Mode", (400,590), self.switch2lidar))
+        
         self.last_distance = 0
         
         self.PID_const = 0.5
@@ -109,6 +114,8 @@ class MainView:
         self.last_angle = 0
         self.cumilative_error_distance = 0
         self.cumilative_error_angle = 0
+
+
 
     def quit(self):
         self.camera_image_subscriber.undeclare()
@@ -237,8 +244,15 @@ class MainView:
     def turtle_pvel_right(self):
         vel = -self.PID_const*abs(self.camera_image.get_width()/2-self.image_xbar)
         self.cmd_vel_publisher.put(("right", vel))
-        
 
+    def swith2manual(self):
+        print('Manual Mode')
+
+    def swith2qrcode(self):
+        print('QRcode Mode')
+    
+    def switch2lidar(self):
+        print('Lidar Mode')
 
     def keyboard_input(self, event):
         self.interface.keyboard_input(event)

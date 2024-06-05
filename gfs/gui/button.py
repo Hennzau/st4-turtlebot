@@ -1,7 +1,7 @@
 import pygame
 
 from gfs.image import Image
-from gfs.fonts import MOTO_MANGUCODE_50, render_font
+from gfs.fonts import MOTO_MANGUCODE_30, render_font
 from gfs.surface import Surface
 
 from gfs.pallet import IVORY, DARKBLUE, DARKGREY
@@ -15,7 +15,7 @@ class Button:
 
         self.over = False
 
-        self.text = render_font(MOTO_MANGUCODE_50, text, IVORY)
+        self.text = render_font(MOTO_MANGUCODE_30, text, IVORY)
         self.rect = self.text.get_rect()
         self.rect = self.rect.move(pos[0], pos[1])
 
