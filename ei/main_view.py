@@ -1,19 +1,13 @@
 import cv2
 import numpy as np
 import pygame.image
-import io
-import cmath
 
 from dataclasses import dataclass
 
-from matplotlib import pyplot as plt
-from matplotlib.patches import Polygon
-from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
-
 from gfs.gui.interface import Interface
 from gfs.gui.used import Used
-from gfs.pallet import IVORY, DARKBLUE
-from gfs.fonts import MOTO_MANGUCODE_30, render_font
+from gfs.fonts import MOTO_MANGUCODE_10
+from gfs.gui.button import *
 
 from pycdr2 import IdlStruct
 from pycdr2.types import uint32, float32
@@ -54,12 +48,34 @@ def message_callback(sample):
     print("MESSAGE RECEIVED : {}".format(sample.payload))
 
 
+def calculate_distance_from_qr_code(points):
+    known_width = 100
+    known_distance = 40
+
+    distance_btw = lambda x, y: np.sqrt(np.dot(x - y, x - y))
+
+    width = np.mean([distance_btw(points[i], points[i + 1]) for i in range(3)])
+
+    distance = (known_distance * known_width) / width
+
+    return distance
+
+
+# manual mode
+MANUAL_MODE = 0
+
+# qr code mode
+QR_CODE_MODE = 1
+
 STATE_LOST = 0
 STATE_ALIGN_RIGHT = 1
 STATE_ALIGN_LEFT = 2
 STATE_FORWARD = 3
 STATE_BACKWARD = 4
 STATE_FINISH = 5
+
+# go to position
+LIDAR_MODE = 2
 
 
 class MainView:
@@ -75,6 +91,10 @@ class MainView:
 
         self.lidar_image_subscriber = self.session.declare_subscriber("turtle/lidar", self.lidar_scan_callback)
         self.lidar_image = None
+        self.map_image = None
+
+        self.lidar_text = render_font(MOTO_MANGUCODE_10, "Instant Lidar Data", (0, 0, 0))
+        self.map_text = render_font(MOTO_MANGUCODE_10, "Slam Map Data", (0, 0, 0))
 
         self.laser = Laser(360, 5, 359, 4000, 0, 0)
         self.map_size_meters = 5
@@ -92,23 +112,26 @@ class MainView:
         self.interface.add_gui(Used(pygame.K_LEFT, "←", (175, 525), self.turtle_left, self.turtle_standby_left))
         self.interface.add_gui(Used(pygame.K_RIGHT, "→", (225, 525), self.turtle_right, self.turtle_standby_right))
 
-        self.last_distance = 0
-        
-        self.PID_const = 0.5
-        self.image_xbar = 0
+        self.interface.add_gui(Button("Manual Mode", (400, 490), self.swith2manual))
+        self.interface.add_gui(Button("QRcode Mode", (400, 540), self.swith2qrcode))
+        self.interface.add_gui(Button("Lidar Mode", (400, 590), self.switch2lidar))
 
-        self.lidar_image = None
+        self.PID_const = 0.1
+        self.qr_code_center_x = 0
 
         self.last_points = []
         self.state = STATE_FINISH
         self.last_state = -1
-        
-        self.destination = np.array([-80, 20])
-        self.last_distance = 0
+
+        self.destination = np.array([50, 30])
+        self.position = np.zeros(2)
+        self.angle = 0
+        self.distance_to_qr_code = 0
         self.last_angle = 0
-        self.cumilative_error_distance = 0
-        self.cumilative_error_angle = 0
-        
+        self.cumulative_error_distance = 0
+        self.cumulative_error_angle = 0
+
+        self.mode = MANUAL_MODE
 
     def quit(self):
         self.camera_image_subscriber.undeclare()
@@ -121,27 +144,81 @@ class MainView:
         image = np.frombuffer(bytes(sample.value.payload), dtype=np.uint8)
         image = cv2.imdecode(image, 1)
         image = cv2.rotate(image, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        image = cv2.flip(image, 0)
 
         ret_qr, decoded_info, points, _ = self.qcd.detectAndDecodeMulti(image)
         quad = points[0] if points is not None else None
+
         if points is not None:
             image = cv2.polylines(image, points.astype(int), True, (255, 0, 0), 3)
 
-            distance = self.calc_distance(quad)
-
-            self.last_distance = distance
+            center = quad.sum(axis=0)
+            self.qr_code_center_x = center[0]
+            self.distance_to_qr_code = calculate_distance_from_qr_code(quad)
 
         self.update_state(image.shape, quad)
 
         self.camera_image = pygame.surfarray.make_surface(image)
 
+    def lidar_scan_callback(self, sample):
+        scan = LaserScan.deserialize(sample.payload)
+
+        angles = list(range(0, 360))
+
+        # to mm
+        distances = list(map(lambda x: x * 1000.0, scan.ranges))
+
+        self.slam.update(scans_mm=distances, scan_angles_degrees=angles)
+        self.slam.getmap(self.map)
+
+        # transform into meters + translate in order to center the map
+        self.pos = self.slam.getpos()
+        self.pos = (self.pos[0] / 10, self.pos[1] / 10, self.pos[2])
+        self.pos = (
+            self.pos[0] - self.map_size_meters * 100 / 2, self.pos[1] - self.map_size_meters * 100 / 2, self.pos[2])
+
+        # transform map bytearray into a pygame image
+        map_image = np.array(self.map).reshape((600, 600))
+        _, map_image = cv2.threshold(map_image, 100, 255, cv2.THRESH_BINARY)
+        map_image = cv2.rotate(map_image, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        map_image = cv2.cvtColor(map_image, cv2.COLOR_GRAY2RGB)
+
+        x = int(300 + self.pos[1])
+        y = int(300 - self.pos[0])
+
+        map_image = cv2.circle(map_image, (x, y), 10, (0, 0, 255), -1)
+
+        map_image = cv2.resize(map_image, (300, 300))
+
+        self.map_image = pygame.surfarray.make_surface(map_image)
+
+        # draw instant scan on a pygame image
+
+        lidar_image = np.zeros((600, 600, 3), dtype=np.uint8)
+
+        for i, distance in enumerate(distances):
+            if distance < 750:
+                # fit the distance inside the window
+                real_distance = distance / 750.0 * 300.0
+
+                angle = np.radians(angles[i])
+                x = int(300.0 + real_distance * np.cos(angle))
+                y = int(300.0 + real_distance * np.sin(angle))
+
+                lidar_image = cv2.circle(lidar_image, (x, y), 10, (0, 255, 0), -1)
+
+        lidar_image = cv2.circle(lidar_image, (300, 300), 10, (255, 255, 255), -1)
+        lidar_image = cv2.rotate(lidar_image, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        lidar_image = cv2.resize(lidar_image, (300, 300))
+        self.lidar_image = pygame.surfarray.make_surface(lidar_image)
+
     def set_destination(self, dest):
         self.destination = dest
-        
-    def set_mouvement(self, linear, angular):
+
+    def set_movement(self, linear, angular):
         self.cmd_vel_publisher.put(("Forward", linear))
         self.cmd_vel_publisher.put(("Rotate", angular))
-    
+
     def go_to_destination(self):
         ALIGNMENT_TOLERANCE = 4 #degree
         POSITION_TOLERANCE  = 5 #cm
@@ -169,9 +246,6 @@ class MainView:
             self.cumilative_error_angle += (relative_angle - self.last_angle)
             self.last_angle = relative_angle
         elif relative_distance > POSITION_TOLERANCE:
-            #self.turtle_up()
-            
-            #v = 0.3*relative_distance + 0.3*(relative_distance - self.last_distance) + 0.03*self.cumilative_error_distance
             self.turtle_up()
            
             self.cumilative_error_distance += (relative_distance- self.last_distance)
@@ -179,77 +253,70 @@ class MainView:
             
         else:
             self.set_mouvement(0, 0)
-            
-    
-    def calc_distance(self, points):
-        knownWidth = 100
-        knownDistance = 40
-
-        distanceBtw = lambda x, y: np.sqrt(np.dot(x - y, x - y))
-
-        width = np.mean([distanceBtw(points[i], points[i + 1]) for i in range(3)])
-
-        distance = (knownDistance * knownWidth) / width
-
-        return distance
-
-    def lidar_scan_callback(self, sample):
-        scan = LaserScan.deserialize(sample.payload)
-
-        angles = list(range(0, 360))
-
-        # to mm
-        distances = list(map(lambda x: x * 1000.0, scan.ranges))
-
-        self.slam.update(scans_mm=distances, scan_angles_degrees=angles)
-        self.slam.getmap(self.map)
-
-        # transform into meters + translate in order to center the map
-        self.pos = self.slam.getpos()
-        self.pos = (self.pos[0] / 10, self.pos[1] / 10, self.pos[2])
-        self.pos = (self.pos[0] - self.map_size_meters * 100 / 2, self.pos[1] - self.map_size_meters * 100 / 2, self.pos[2])
 
     def turtle_up(self):
-        self.cmd_vel_publisher.put(("Forward", 10.0))
+        if self.mode == MANUAL_MODE:
+            self.cmd_vel_publisher.put(("Forward", 20.0))
 
     def turtle_down(self):
-        self.cmd_vel_publisher.put(("Backward", -10.0))
+        if self.mode == MANUAL_MODE:
+            self.cmd_vel_publisher.put(("Forward", -20.0))
 
     def turtle_left(self):
-        self.cmd_vel_publisher.put(("Rotate", 35.0))
+        if self.mode == MANUAL_MODE:
+            self.cmd_vel_publisher.put(("Rotate", 100.0))
 
     def turtle_right(self):
-        self.cmd_vel_publisher.put(("Rotate", -35.0))
+        if self.mode == MANUAL_MODE:
+            self.cmd_vel_publisher.put(("Rotate", -100.0))
 
     def turtle_standby_up(self):
-        self.cmd_vel_publisher.put(("Forward", 0.0))
+        if self.mode == MANUAL_MODE:
+            self.cmd_vel_publisher.put(("Forward", 0.0))
 
     def turtle_standby_down(self):
-        self.cmd_vel_publisher.put(("Forward", 0.0))
+        if self.mode == MANUAL_MODE:
+            self.cmd_vel_publisher.put(("Forward", 0.0))
 
     def turtle_standby_left(self):
-        self.cmd_vel_publisher.put(("Rotate", 0.0))
+        if self.mode == MANUAL_MODE:
+            self.cmd_vel_publisher.put(("Rotate", 0.0))
 
     def turtle_standby_right(self):
-        self.cmd_vel_publisher.put(("Rotate", 0.0))
-        
-    def turle_pvel_up(self):
-        vel = self.PID_const*abs(self.camera_image.get_width()/2-self.image_xbar)
-        self.cmd_vel_publisher.put(("Forward", vel))
-    
-    def turtle_pvel_down(self):
-        vel = -self.PID_const*abs(self.camera_image.get_width()/2-self.image_xbar)
-        self.cmd_vel_publisher.put(("Backward", vel))
-        
-    def turtle_pvel_left(self):
-        vel = self.PID_const*abs(self.camera_image.get_width()/2-self.image_xbar)
-        self.cmd_vel_publisher.put(("Left", vel))
-        
-    def turtle_pvel_right(self):
-        vel = -self.PID_const*abs(self.camera_image.get_width()/2-self.image_xbar)
-        self.cmd_vel_publisher.put(("right", vel))
-        
+        if self.mode == MANUAL_MODE:
+            self.cmd_vel_publisher.put(("Rotate", 0.0))
 
+    def turtle_pvel_up(self):
+        vel = 0.03 * abs(self.camera_image.get_width() / 2 - self.qr_code_center_x)
+
+        self.cmd_vel_publisher.put(("Forward", vel))
+
+    def turtle_pvel_down(self):
+        vel = -0.03 * abs(self.camera_image.get_width() / 2 - self.qr_code_center_x)
+        self.cmd_vel_publisher.put(("Forward", vel))
+
+    def turtle_pvel_left(self):
+        vel = self.PID_const * abs(self.camera_image.get_width() / 2 - self.qr_code_center_x)
+        self.cmd_vel_publisher.put(("Rotate", vel))
+
+    def turtle_pvel_right(self):
+        vel = -self.PID_const * abs(self.camera_image.get_width() / 2 - self.qr_code_center_x)
+        self.cmd_vel_publisher.put(("Rotate", vel))
+
+    def swith2manual(self):
+        print('Manual Mode')
+
+        self.mode = MANUAL_MODE
+
+    def swith2qrcode(self):
+        print('QRcode Mode')
+
+        self.mode = QR_CODE_MODE
+
+    def switch2lidar(self):
+        print('Lidar Mode')
+
+        self.mode = LIDAR_MODE
 
     def keyboard_input(self, event):
         self.interface.keyboard_input(event)
@@ -262,65 +329,51 @@ class MainView:
 
     def update(self):
         self.interface.update()
-        """
-        if self.state != self.last_state:
 
-            self.turtle_standby_down()
-            self.turtle_standby_left()
+        if self.mode == QR_CODE_MODE:
+            if self.state != self.last_state:
 
-            match self.state:
-                case 0: 
-                    self.turtle_right()
-                    #self.turtle_pvel_right()
-                case 1: 
-                    self.turtle_left()
-                    #self.turtle_pvel_left()
-                case 2: 
-                    self.turtle_right()
-                    #self.turtle_pvel_right()
-                case 3: 
-                    self.turtle_up()
-                    #self.turle_pvel_up()
-                case 4: 
-                    self.turtle_down()
-                    #self.turtle_pvel_down()
-                case _:
-                    pass
-            self.last_state = self.state
-        """
+                match self.state:
+                    case 0:
+                        self.turtle_pvel_right()
+                    case 1:
+                        self.turtle_pvel_left()
+                    case 2:
+                        self.turtle_pvel_right()
+                    case 3:
+                        self.turtle_pvel_up()
+                    case 4:
+                        self.turtle_pvel_down()
+                    case _:
+                        pass
 
-        self.go_to_destination()
+                self.last_state = self.state
+        elif self.mode == LIDAR_MODE:
+            self.go_to_destination()
 
-        
-    def update_state(self, imageShape, quad):
-        ALIGNMENT_TOLERANCE = 75
-        POSITION_TOLERANCE = 5
+    def update_state(self, image_shape, quad):
+        alignment_tolerance = 75
+        position_tolerance = 5
 
-        width, height = imageShape[:2]
+        width, height = image_shape[:2]
 
         if quad is None:
             self.state = STATE_LOST
             return
 
         position = np.mean(quad[:, 1])
-        
-        distance = self.calc_distance(quad)
-        
-        if position > width / 2 + ALIGNMENT_TOLERANCE:
+        distance = calculate_distance_from_qr_code(quad)
+
+        if position > width / 2 + alignment_tolerance:
             self.state = STATE_ALIGN_RIGHT
-        elif position < width / 2 - ALIGNMENT_TOLERANCE:
+        elif position < width / 2 - alignment_tolerance:
             self.state = STATE_ALIGN_LEFT
-        elif distance > 30 + POSITION_TOLERANCE:
+        elif distance > 30 + position_tolerance:
             self.state = STATE_FORWARD
-        elif distance < 30 - POSITION_TOLERANCE:
+        elif distance < 30 - position_tolerance:
             self.state = STATE_BACKWARD
         else:
             self.state = STATE_FINISH
-            
-        center=quad.sum(axis=0)
-        self.image_xbar = center[0]
-        
-    
 
     def render(self, surface):
         surface.fill(IVORY)
@@ -331,11 +384,20 @@ class MainView:
             surface.blit(self.camera_image, 15, 15)
 
         if self.lidar_image is not None:
-            surface.draw_rect(DARKBLUE, pygame.Rect(600, 20, self.lidar_image.get_width() + 10,
+            surface.draw_rect(DARKBLUE, pygame.Rect(960, 20, self.lidar_image.get_width() + 10,
                                                     self.lidar_image.get_height() + 10))
-            surface.blit(self.lidar_image, 605, 25)
+            surface.blit(self.lidar_image, 965, 25)
 
-        text = render_font(MOTO_MANGUCODE_30, f'Distance: {self.last_distance:.2f}cm', (0, 0, 0))
+            surface.draw_image(self.lidar_text, 1050, 335)
+
+        if self.map_image is not None:
+            surface.draw_rect(DARKBLUE, pygame.Rect(960, 400, self.map_image.get_width() + 10,
+                                                    self.map_image.get_height() + 10))
+            surface.blit(self.map_image, 965, 405)
+
+            surface.draw_image(self.map_text, 1075, 385)
+
+        text = render_font(MOTO_MANGUCODE_30, f'Distance: {self.distance_to_qr_code:.2f}cm', (0, 0, 0))
 
         surface.draw_image(text, 50, 400)
 
