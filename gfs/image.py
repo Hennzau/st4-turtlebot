@@ -23,3 +23,6 @@ class Image:
 
     def get_rect(self):
         return self.py_image.get_rect()
+
+    def draw_disk(self, color, pos, radius):
+        pygame.draw.circle(self.py_image, color, pos, radius)
