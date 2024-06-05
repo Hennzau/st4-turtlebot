@@ -259,20 +259,20 @@ class MainView:
 
             match self.state:
                 case 0: 
-                    # self.turtle_right()
-                    self.turtle_pvel_right()
+                    self.turtle_right()
+                    #self.turtle_pvel_right()
                 case 1: 
-                    # self.turtle_left()
-                    self.turtle_pvel_left()
+                    self.turtle_left()
+                    #self.turtle_pvel_left()
                 case 2: 
-                    # self.turtle_right()
-                    self.turtle_pvel_right()
+                    self.turtle_right()
+                    #self.turtle_pvel_right()
                 case 3: 
-                    # self.turtle_up()
-                    self.turle_pvel_up()
+                    self.turtle_up()
+                    #self.turle_pvel_up()
                 case 4: 
-                    # self.turtle_down()
-                    self.turtle_pvel_down()
+                    self.turtle_down()
+                    #self.turtle_pvel_down()
                 case _:
                     pass
 
