@@ -233,9 +233,7 @@ class MainView:
         scan = LaserScan.deserialize(sample.payload)
 
         angles = list(range(0, 360))
-
-        # to mm
-        distances = list(map(lambda x: x * 1000.0, scan.ranges))
+        distances = list(map(lambda z: z * 1000.0, scan.ranges))
 
         self.slam.update(scans_mm=distances, scan_angles_degrees=angles)
         self.slam.getmap(self.map)

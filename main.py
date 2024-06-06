@@ -8,6 +8,8 @@ from ei_viewer import EiViewer
 import zenoh
 
 
+# olivier@zettascale.tech
+
 def main():
     surface = Surface(1280, 720, "ST4 EI1 - Interface!")
     clock = pygame.time.Clock()
