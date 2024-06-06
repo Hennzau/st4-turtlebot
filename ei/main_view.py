@@ -117,9 +117,25 @@ class MainView:
         self.interface.add_gui(Button("QRcode Mode", (400, 540), self.switch_to_qrcode))
         self.interface.add_gui(Button("Lidar Mode", (400, 590), self.switch_to_lidar))
 
-        self.PID_const = 0.6
+        #QRcode Mode PID control: w--rotation l--longitudinal
         self.qr_code_center_x = 0
         self.distance_to_qr_code = 0
+        self.uPrevious_w = 0
+        self.uCurent_w = 0
+        self.setValue_w = 0
+        self.lastErr_w = 0
+        self.preLastErr_w = 0
+        self.errSum_w = 0
+        self.errSumLimit_w = 5
+        
+        self.uPrevious_l = 0
+        self.uCurent_l = 0
+        self.setValue_l = 0
+        self.lastErr_l = 0
+        self.preLastErr_l = 0
+        self.errSum_l = 0
+        self.errSumLimit_l = 5
+        
 
         self.last_points = []
         self.state = STATE_FINISH
@@ -154,7 +170,7 @@ class MainView:
             image = cv2.polylines(image, points.astype(int), True, (255, 0, 0), 3)
 
             self.distance_to_qr_code = calculate_distance_from_qr_code(quad)
-            self.qr_code_center_x = np.mean(quad[:, 0])
+            [self.qr_code_center_x,self.qe_code_center_y] = np.mean(quad)
 
         self.update_state(image.shape, quad)
 
@@ -342,18 +358,31 @@ class MainView:
                 self.cmd_vel_publisher.put(("Forward", 0.0))
                 self.cmd_vel_publisher.put(("Rotate", 0.0))
 
-                vel_x = self.PID_const * abs(self.qr_code_center_x - self.camera_image.get_width() / 2)
+                err_w = self.qr_code_center_x - self.camera_image.get_width() / 2
+                err_l = self.distance_to_qr_code - 30
+                
+                dErr_w = err_w - self.lastErr_w
+                self.preLastErr_w = self.lastErr_w
+                self.lastErr_w = err_w
+                self.errSum_w += err_w
+                vel_w = 0.3 * err_w + 0.15* self.errSum_w + 0.2 * dErr_w
+                
+                dErr_l = err_l - self.lastErr_l
+                self.preLastErr_l = self.lastErr_l
+                self.lastErr_l = err_l
+                self.errSum_l += err_l
+                vel_l = 0.3 * err_l + 0.15* self.errSum_l + 0.2 * dErr_l
 
                 match self.state:
 
                     case 1:
-                        self.cmd_vel_publisher.put(("Rotate", -vel_x))
+                        self.cmd_vel_publisher.put(("Rotate", vel_w))
                     case 2:
-                        self.cmd_vel_publisher.put(("Rotate", vel_x))
+                        self.cmd_vel_publisher.put(("Rotate", vel_w))
                     case 3:
-                        self.cmd_vel_publisher.put(("Forward", 20.0))
+                        self.cmd_vel_publisher.put(("Forward", vel_l))
                     case 4:
-                        self.cmd_vel_publisher.put(("Forward", -20.0))
+                        self.cmd_vel_publisher.put(("Forward", vel_l))
                     case _:
                         pass
 
