@@ -22,6 +22,7 @@ from typing import List
 from breezyslam.algorithms import RMHC_SLAM
 from breezyslam.sensors import Laser
 
+import time
 
 @dataclass
 class Time(IdlStruct, typename="Time"):
@@ -102,13 +103,12 @@ class MainView:
         self.state = STATE_FINISH
         self.last_state = -1
         
-        self.destination = np.array([50,30])
-        self.position = np.zeros(2)
-        self.angle = 0
+        self.destination = np.array([-80, 20])
         self.last_distance = 0
         self.last_angle = 0
         self.cumilative_error_distance = 0
         self.cumilative_error_angle = 0
+        
 
     def quit(self):
         self.camera_image_subscriber.undeclare()
@@ -145,27 +145,38 @@ class MainView:
     def go_to_destination(self):
         ALIGNMENT_TOLERANCE = 4 #degree
         POSITION_TOLERANCE  = 5 #cm
-        
-        if self.position is None:
+                
+        if self.destination is None:
+            self.set_mouvement(0, 0)
             return
         
-        relative_position = self.destination - self.position
-        relative_angle = self.angle - np.arctan2(*relative_position)
-        relative_distance = np.sqrt(np.dot(relative_position,relative_position))
+        position = self.pos[0], self.pos[1]
+        angle = self.pos[2]
         
-        if abs(relative_angle) > ALIGNMENT_TOLERANCE:
+        x, y = self.destination - position
+        relative_position_angle = (np.pi + np.arctan(y/x) if x >= 0 else np.arctan(y/x))*180/np.pi
+        relative_angle = relative_position_angle - angle
+        
+        relative_distance = np.sqrt(x**2+y**2)
+        
+        print(relative_distance)
+        
+        if abs(relative_angle) > ALIGNMENT_TOLERANCE and relative_distance > POSITION_TOLERANCE:
             
-            alpha = 10*relative_angle + 4*self.cumilative_error_angle +4*(relative_angle - self.last_angle)
+            alpha = 1*relative_angle +2*(relative_angle - self.last_angle)+ .04*self.cumilative_error_angle
             self.set_mouvement(0,alpha)
             
-            self.last_angle = relative_angle
             self.cumilative_error_angle += (relative_angle - self.last_angle)
+            self.last_angle = relative_angle
         elif relative_distance > POSITION_TOLERANCE:
-            v = 100*relative_position + 10*self.cumilative_error_angle +10*(relative_angle - self.last_angle)
-            self.set_mouvement(0,v)
+            #self.turtle_up()
             
-            self.last_distance = relative_distance
+            #v = 0.3*relative_distance + 0.3*(relative_distance - self.last_distance) + 0.03*self.cumilative_error_distance
+            self.turtle_up()
+           
             self.cumilative_error_distance += (relative_distance- self.last_distance)
+            self.last_distance = relative_distance
+            
         else:
             self.set_mouvement(0, 0)
             
@@ -251,7 +262,7 @@ class MainView:
 
     def update(self):
         self.interface.update()
-
+        """
         if self.state != self.last_state:
 
             self.turtle_standby_down()
@@ -275,8 +286,12 @@ class MainView:
                     #self.turtle_pvel_down()
                 case _:
                     pass
-
             self.last_state = self.state
+        """
+
+        self.go_to_destination()
+
+        
     def update_state(self, imageShape, quad):
         ALIGNMENT_TOLERANCE = 75
         POSITION_TOLERANCE = 5
@@ -288,7 +303,7 @@ class MainView:
             return
 
         position = np.mean(quad[:, 1])
-        print(position)
+        
         distance = self.calc_distance(quad)
         
         if position > width / 2 + ALIGNMENT_TOLERANCE:
