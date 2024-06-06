@@ -117,17 +117,17 @@ class MainView:
         self.interface.add_gui(Button("QRcode Mode", (400, 540), self.switch_to_qrcode))
         self.interface.add_gui(Button("Lidar Mode", (400, 590), self.switch_to_lidar))
 
-        self.PID_const = 0.1
+        self.PID_const = 0.6
         self.qr_code_center_x = 0
+        self.distance_to_qr_code = 0
 
         self.last_points = []
         self.state = STATE_FINISH
         self.last_state = -1
 
-        self.destination = np.array([50, 30])
+        self.destination = np.array([0, 0])
         self.position = np.zeros(2)
         self.angle = 0
-        self.distance_to_qr_code = 0
         self.last_angle = 0
         self.cumulative_error_distance = 0
         self.cumulative_error_angle = 0
@@ -154,6 +154,7 @@ class MainView:
             image = cv2.polylines(image, points.astype(int), True, (255, 0, 0), 3)
 
             self.distance_to_qr_code = calculate_distance_from_qr_code(quad)
+            self.qr_code_center_x = np.mean(quad[:, 0])
 
         self.update_state(image.shape, quad)
 
@@ -211,6 +212,30 @@ class MainView:
         lidar_image = cv2.resize(lidar_image, (300, 300))
         self.lidar_image = pygame.surfarray.make_surface(lidar_image)
 
+    def update_state(self, image_shape, quad):
+        alignment_tolerance = 50
+        position_tolerance = 5
+
+        width, height = image_shape[:2]
+
+        if quad is None:
+            self.state = STATE_LOST
+            return
+
+        position = np.mean(quad[:, 1])
+        distance = calculate_distance_from_qr_code(quad)
+
+        if position > width / 2 + alignment_tolerance:
+            self.state = STATE_ALIGN_RIGHT
+        elif position < width / 2 - alignment_tolerance:
+            self.state = STATE_ALIGN_LEFT
+        elif distance > 30 + position_tolerance:
+            self.state = STATE_FORWARD
+        elif distance < 30 - position_tolerance:
+            self.state = STATE_BACKWARD
+        else:
+            self.state = STATE_FINISH
+
     def set_destination(self, dest):
         self.destination = dest
 
@@ -264,28 +289,20 @@ class MainView:
             self.cmd_vel_publisher.put(("Rotate", -100.0))
 
     def turtle_standby_up(self):
-        self.cmd_vel_publisher.put(("Forward", 0.0))
+        if self.mode == MANUAL_MODE:
+            self.cmd_vel_publisher.put(("Forward", 0.0))
 
     def turtle_standby_down(self):
-        self.cmd_vel_publisher.put(("Forward", 0.0))
+        if self.mode == MANUAL_MODE:
+            self.cmd_vel_publisher.put(("Forward", 0.0))
 
     def turtle_standby_left(self):
-        self.cmd_vel_publisher.put(("Rotate", 0.0))
+        if self.mode == MANUAL_MODE:
+            self.cmd_vel_publisher.put(("Rotate", 0.0))
 
     def turtle_standby_right(self):
-        self.cmd_vel_publisher.put(("Rotate", 0.0))
-
-    def turtle_pvel_up(self):
-        self.cmd_vel_publisher.put(("Forward", 20.0))
-
-    def turtle_pvel_down(self):
-        self.cmd_vel_publisher.put(("Forward", -20.0))
-
-    def turtle_pvel_left(self):
-        self.cmd_vel_publisher.put(("Rotate", 100.0))
-
-    def turtle_pvel_right(self):
-        self.cmd_vel_publisher.put(("Rotate", -100.0))
+        if self.mode == MANUAL_MODE:
+            self.cmd_vel_publisher.put(("Rotate", 0.0))
 
     def switch_to_manual(self):
         self.mode = MANUAL_MODE
@@ -302,6 +319,17 @@ class MainView:
     def mouse_input(self, event):
         self.interface.mouse_input(event)
 
+        if event.button == 1:
+            pos = np.array(event.pos) - np.array((965, 405))
+            pos = (pos / 300) * self.map_size_meters - self.map_size_meters / 2
+            pos = pos * 100
+            pos[0] = -pos[0]
+
+            if -self.map_size_meters * 100 / 2 < pos[0] < self.map_size_meters * 100 / 2:
+                if -self.map_size_meters * 100 / 2 < pos[1] < self.map_size_meters * 100 / 2:
+                    self.destination = pos
+                    print(f"Click at: {pos}")
+
     def mouse_motion(self, event):
         self.interface.mouse_motion(event)
 
@@ -311,20 +339,21 @@ class MainView:
         if self.mode == QR_CODE_MODE:
             if self.state != self.last_state:
 
-                self.turtle_standby_up()
-                self.turtle_standby_right()
+                self.cmd_vel_publisher.put(("Forward", 0.0))
+                self.cmd_vel_publisher.put(("Rotate", 0.0))
 
-                print (self.state)
+                vel_x = self.PID_const * abs(self.qr_code_center_x - self.camera_image.get_width() / 2)
 
                 match self.state:
+
                     case 1:
-                        self.turtle_pvel_right()
+                        self.cmd_vel_publisher.put(("Rotate", -vel_x))
                     case 2:
-                        self.turtle_pvel_left()
+                        self.cmd_vel_publisher.put(("Rotate", vel_x))
                     case 3:
-                        self.turtle_pvel_up()
+                        self.cmd_vel_publisher.put(("Forward", 20.0))
                     case 4:
-                        self.turtle_pvel_down()
+                        self.cmd_vel_publisher.put(("Forward", -20.0))
                     case _:
                         pass
 
@@ -332,30 +361,6 @@ class MainView:
 
         elif self.mode == LIDAR_MODE:
             self.go_to_destination()
-
-    def update_state(self, image_shape, quad):
-        alignment_tolerance = 75
-        position_tolerance = 5
-
-        width, height = image_shape[:2]
-
-        if quad is None:
-            self.state = STATE_LOST
-            return
-
-        position = np.mean(quad[:, 1])
-        distance = calculate_distance_from_qr_code(quad)
-
-        if position > width / 2 + alignment_tolerance:
-            self.state = STATE_ALIGN_RIGHT
-        elif position < width / 2 - alignment_tolerance:
-            self.state = STATE_ALIGN_LEFT
-        elif distance > 30 + position_tolerance:
-            self.state = STATE_FORWARD
-        elif distance < 30 - position_tolerance:
-            self.state = STATE_BACKWARD
-        else:
-            self.state = STATE_FINISH
 
     def render(self, surface):
         surface.fill(IVORY)
