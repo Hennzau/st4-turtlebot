@@ -147,12 +147,47 @@ class MainView:
 
         self.mode = MANUAL_MODE
 
+        # camera matrix for Picamera V2.1, real values
+        self.camera_matrix = np.array([
+            [910.1155107777962, 0.0, 360.3277519024787],
+            [0.0, 910.2233367566544, 372.6634999577232],
+            [0.0, 0.0, 1.0]
+        ])
+
+        # camera distortion parameters for PiCamera V2.1, real values from calibration
+        self.camera_distortion = np.array(
+            [0.0212284835698144, 0.8546829039917951, 0.0034281408326615323, 0.0005749116561059772, -3.217248182814475])
+
     def quit(self):
         self.camera_image_subscriber.undeclare()
         self.lidar_image_subscriber.undeclare()
         self.cmd_vel_publisher.undeclare()
         self.message_publisher.undeclare()
         self.message_subscriber.undeclare()
+
+    def calculate_qr_code_coords(self, quad):
+
+        # Selected coordinate points for each corner of QR code.
+        qr_edges = np.array([[0, 0, 0],
+                             [0, 1, 0],
+                             [1, 1, 0],
+                             [1, 0, 0]], dtype='float32').reshape((4, 1, 3))
+
+        # determine the orientation of QR code coordinate system with respect to camera coorindate system.
+        ret, rvec, tvec = cv2.solvePnP(qr_edges, quad, self.camera_matrix, self.camera_distortion)
+
+        # Define unit xyz axes. These are then projected to camera view using the rotation matrix and translation
+        # vector.
+
+        unitv_points = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]], dtype='float32').reshape((4, 1, 3))
+        if ret:
+            points, jac = cv2.projectPoints(unitv_points, rvec, tvec, self.camera_matrix, self.camera_distortion)
+            # the returned points are pixel coordinates of each unit vector.
+            return points, rvec, tvec
+
+        # return empty arrays if rotation and translation values not found
+        else:
+            return [], [], []
 
     def camera_image_callback(self, sample):
         image = np.frombuffer(bytes(sample.value.payload), dtype=np.uint8)
@@ -166,8 +201,29 @@ class MainView:
         if points is not None:
             image = cv2.polylines(image, points.astype(int), True, (255, 0, 0), 3)
 
-            self.distance_to_qr_code = calculate_distance_from_qr_code(quad)
             self.qr_code_center_x = np.mean(quad[:, 1])
+
+            axis_points, rvec, tvec = self.calculate_qr_code_coords(quad)
+            self.distance_to_qr_code = np.linalg.norm(tvec) * 4
+
+            # BGR color format
+            colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (0, 0, 0)]
+
+            # check axes points are projected to camera view.
+            if len(axis_points) > 0:
+                axis_points = axis_points.reshape((4, 2))
+
+                origin = (int(axis_points[0][0]), int(axis_points[0][1]))
+
+                for p, c in zip(axis_points[1:], colors[:3]):
+                    p = (int(p[0]), int(p[1]))
+
+                    # Sometimes qr detector will make a mistake and projected point will overflow integer value. We skip
+                    # these cases.
+                    if origin[0] > 5 * image.shape[1] or origin[1] > 5 * image.shape[1]: break
+                    if p[0] > 5 * image.shape[1] or p[1] > 5 * image.shape[1]: break
+
+                    cv2.line(image, origin, p, c, 5)
 
         self.update_state(image.shape, quad)
 
