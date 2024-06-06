@@ -18,6 +18,7 @@ from breezyslam.sensors import Laser
 
 import time
 
+
 @dataclass
 class Time(IdlStruct, typename="Time"):
     sec: uint32
@@ -112,9 +113,9 @@ class MainView:
         self.interface.add_gui(Used(pygame.K_LEFT, "←", (175, 525), self.turtle_left, self.turtle_standby_left))
         self.interface.add_gui(Used(pygame.K_RIGHT, "→", (225, 525), self.turtle_right, self.turtle_standby_right))
 
-        self.interface.add_gui(Button("Manual Mode", (400, 490), self.swith2manual))
-        self.interface.add_gui(Button("QRcode Mode", (400, 540), self.swith2qrcode))
-        self.interface.add_gui(Button("Lidar Mode", (400, 590), self.switch2lidar))
+        self.interface.add_gui(Button("Manual Mode", (400, 490), self.switch_to_manual))
+        self.interface.add_gui(Button("QRcode Mode", (400, 540), self.switch_to_qrcode))
+        self.interface.add_gui(Button("Lidar Mode", (400, 590), self.switch_to_lidar))
 
         self.PID_const = 0.1
         self.qr_code_center_x = 0
@@ -152,8 +153,6 @@ class MainView:
         if points is not None:
             image = cv2.polylines(image, points.astype(int), True, (255, 0, 0), 3)
 
-            center = quad.sum(axis=0)
-            self.qr_code_center_x = center[0]
             self.distance_to_qr_code = calculate_distance_from_qr_code(quad)
 
         self.update_state(image.shape, quad)
@@ -220,39 +219,33 @@ class MainView:
         self.cmd_vel_publisher.put(("Rotate", angular))
 
     def go_to_destination(self):
-        ALIGNMENT_TOLERANCE = 4 #degree
-        POSITION_TOLERANCE  = 5 #cm
-                
+        alignment_tolerance = 4  # degree
+        position_tolerance = 5  # cm
+
         if self.destination is None:
-            self.set_mouvement(0, 0)
+            self.set_movement(0.0, 0.0)
             return
-        
+
         position = self.pos[0], self.pos[1]
         angle = self.pos[2]
-        
+
         x, y = self.destination - position
-        relative_position_angle = (np.pi + np.arctan(y/x) if x >= 0 else np.arctan(y/x))*180/np.pi
+        relative_position_angle = (np.pi + np.arctan(y / x) if x >= 0 else np.arctan(y / x)) * 180 / np.pi
         relative_angle = relative_position_angle - angle
-        
-        relative_distance = np.sqrt(x**2+y**2)
-        
-        print(relative_distance)
-        
-        if abs(relative_angle) > ALIGNMENT_TOLERANCE and relative_distance > POSITION_TOLERANCE:
-            
-            alpha = 1*relative_angle +2*(relative_angle - self.last_angle)+ .04*self.cumilative_error_angle
-            self.set_mouvement(0,alpha)
-            
-            self.cumilative_error_angle += (relative_angle - self.last_angle)
+
+        relative_distance = np.sqrt(x ** 2 + y ** 2)
+
+        if abs(relative_angle) > alignment_tolerance and relative_distance > position_tolerance:
+            alpha = 1 * relative_angle + 2 * (relative_angle - self.last_angle) + .04 * self.cumulative_error_angle
+            self.set_movement(0.0, float(alpha))
+
+            self.cumulative_error_angle += (relative_angle - self.last_angle)
             self.last_angle = relative_angle
-        elif relative_distance > POSITION_TOLERANCE:
-            self.turtle_up()
-           
-            self.cumilative_error_distance += (relative_distance- self.last_distance)
-            self.last_distance = relative_distance
-            
+        elif relative_distance > position_tolerance:
+            self.set_movement(20.0, 0.0)
+
         else:
-            self.set_mouvement(0, 0)
+            self.set_movement(0.0, 0.0)
 
     def turtle_up(self):
         if self.mode == MANUAL_MODE:
@@ -271,51 +264,36 @@ class MainView:
             self.cmd_vel_publisher.put(("Rotate", -100.0))
 
     def turtle_standby_up(self):
-        if self.mode == MANUAL_MODE:
-            self.cmd_vel_publisher.put(("Forward", 0.0))
+        self.cmd_vel_publisher.put(("Forward", 0.0))
 
     def turtle_standby_down(self):
-        if self.mode == MANUAL_MODE:
-            self.cmd_vel_publisher.put(("Forward", 0.0))
+        self.cmd_vel_publisher.put(("Forward", 0.0))
 
     def turtle_standby_left(self):
-        if self.mode == MANUAL_MODE:
-            self.cmd_vel_publisher.put(("Rotate", 0.0))
+        self.cmd_vel_publisher.put(("Rotate", 0.0))
 
     def turtle_standby_right(self):
-        if self.mode == MANUAL_MODE:
-            self.cmd_vel_publisher.put(("Rotate", 0.0))
+        self.cmd_vel_publisher.put(("Rotate", 0.0))
 
     def turtle_pvel_up(self):
-        vel = 0.03 * abs(self.camera_image.get_width() / 2 - self.qr_code_center_x)
-
-        self.cmd_vel_publisher.put(("Forward", vel))
+        self.cmd_vel_publisher.put(("Forward", 20.0))
 
     def turtle_pvel_down(self):
-        vel = -0.03 * abs(self.camera_image.get_width() / 2 - self.qr_code_center_x)
-        self.cmd_vel_publisher.put(("Forward", vel))
+        self.cmd_vel_publisher.put(("Forward", -20.0))
 
     def turtle_pvel_left(self):
-        vel = self.PID_const * abs(self.camera_image.get_width() / 2 - self.qr_code_center_x)
-        self.cmd_vel_publisher.put(("Rotate", vel))
+        self.cmd_vel_publisher.put(("Rotate", 100.0))
 
     def turtle_pvel_right(self):
-        vel = -self.PID_const * abs(self.camera_image.get_width() / 2 - self.qr_code_center_x)
-        self.cmd_vel_publisher.put(("Rotate", vel))
+        self.cmd_vel_publisher.put(("Rotate", -100.0))
 
-    def swith2manual(self):
-        print('Manual Mode')
-
+    def switch_to_manual(self):
         self.mode = MANUAL_MODE
 
-    def swith2qrcode(self):
-        print('QRcode Mode')
-
+    def switch_to_qrcode(self):
         self.mode = QR_CODE_MODE
 
-    def switch2lidar(self):
-        print('Lidar Mode')
-
+    def switch_to_lidar(self):
         self.mode = LIDAR_MODE
 
     def keyboard_input(self, event):
@@ -333,13 +311,16 @@ class MainView:
         if self.mode == QR_CODE_MODE:
             if self.state != self.last_state:
 
+                self.turtle_standby_up()
+                self.turtle_standby_right()
+
+                print (self.state)
+
                 match self.state:
-                    case 0:
-                        self.turtle_pvel_right()
                     case 1:
-                        self.turtle_pvel_left()
-                    case 2:
                         self.turtle_pvel_right()
+                    case 2:
+                        self.turtle_pvel_left()
                     case 3:
                         self.turtle_pvel_up()
                     case 4:
@@ -348,6 +329,7 @@ class MainView:
                         pass
 
                 self.last_state = self.state
+
         elif self.mode == LIDAR_MODE:
             self.go_to_destination()
 
